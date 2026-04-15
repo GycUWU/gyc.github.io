@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大小周与节假日计算器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            max-width: 450px;
+            width: 100%;
+        }
+        h1 {
+            font-size: 22px;
+            text-align: center;
+            color: #2c3e50;
+        }
+        .section {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #eef2f5;
+            border-radius: 6px;
+        }
+        .highlight {
+            font-size: 24px;
+            font-weight: bold;
+            color: #e74c3c;
+            text-align: center;
+            margin: 10px 0;
+        }
+        .holiday-badge {
+            display: inline-block;
+            background-color: #e74c3c;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .work-badge {
+            display: inline-block;
+            background-color: #f39c12;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 8px;
+        }
+        input[type="date"] {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .result-text {
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 15px;
+            color: #27ae60;
+            line-height: 1.5;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            padding: 8px 0;
+            border-bottom: 1px solid #ddd;
+        }
+        li:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>大小周与节假日计算器</h1>
+    
+    <div class="section">
+        <div style="text-align: center;">今天是：<span id="today-date"></span></div>
+        <div class="highlight" id="today-status">加载中...</div>
+        <div style="text-align: center; font-size: 14px; color: #7f8c8d;">大周：工作5天 | 小周：工作6天</div>
+        <div style="text-align: center; margin-top: 10px;" id="today-holiday-status"></div>
+    </div>
+
+    <div class="section">
+        <label for="query-date">查询指定日期：</label>
+        <input type="date" id="query-date">
+        <button onclick="checkDate()">计算</button>
+        <div class="result-text" id="query-result"></div>
+    </div>
+
+    <div class="section">
+        <label>未来四周排班预测：</label>
+        <ul id="future-schedule"></ul>
+    </div>
+</div>
+
+<script>
+    // 设定基准日期：2026年4月13日所在的星期是大周
+    const baseMonday = new Date(2026, 3, 13); 
+    
+    // 使用范围来定义节假日连休
+    const holidayRanges = [
+        { name: "元旦", start: "2026-01-01", end: "2026-01-03" },
+        { name: "春节", start: "2026-02-17", end: "2026-02-23" },
+        { name: "清明节", start: "2026-04-04", end: "2026-04-06" },
+        { name: "劳动节", start: "2026-05-01", end: "2026-05-05" },
+        { name: "端午节", start: "2026-06-19", end: "2026-06-21" },
+        { name: "中秋节", start: "2026-09-25", end: "2026-09-27" },
+        { name: "国庆节", start: "2026-10-01", end: "2026-10-07" }
+    ];
+
+    // 定义调休需要上班的日期
+    const makeUpWorkdays = {
+        "2026-02-14": "春节调休",
+        "2026-02-15": "春节调休",
+        "2026-04-26": "劳动节调休",
+        "2026-05-09": "劳动节调休",
+        "2026-09-27": "中秋国庆调休",
+        "2026-10-10": "国庆节调休"
+    };
+
+    let holidays = {};
+
+    // 将日期对象转换为 YYYY-MM-DD 格式的字符串
+    function getDateFormatStr(date) {
+        let y = date.getFullYear();
+        let m = String(date.getMonth() + 1).padStart(2, '0');
+        let d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    // 初始化节假日字典：将范围内的每一天都展开并存入字典
+    function initHolidays() {
+        for (let i = 0; i < holidayRanges.length; i++) {
+            let range = holidayRanges[i];
+            // 加上 "T00:00:00" 可以避免时区解析带来的日期偏移问题
+            let startDate = new Date(range.start + "T00:00:00");
+            let endDate = new Date(range.end + "T00:00:00");
+            
+            let currentDate = new Date(startDate);
+            while (currentDate <= endDate) {
+                holidays[getDateFormatStr(currentDate)] = range.name;
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+        }
+    }
+
+    // 执行节假日字典初始化
+    initHolidays();
+
+    function getHolidayInfo(dateStr) {
+        if (holidays[dateStr]) {
+            return { type: 'holiday', name: holidays[dateStr] };
+        } else if (makeUpWorkdays[dateStr]) {
+            return { type: 'workday', name: makeUpWorkdays[dateStr] };
+        }
+        return null;
+    }
+
+    function getMonday(d) {
+        let date = new Date(d);
+        date.setHours(0, 0, 0, 0);
+        let day = date.getDay();
+        let diff = date.getDate() - day + (day === 0 ? -6 : 1);
+        return new Date(date.setDate(diff));
+    }
+
+    function getWeekType(targetDate) {
+        let targetMonday = getMonday(targetDate);
+        let diffTime = targetMonday.getTime() - baseMonday.getTime();
+        let diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+        let diffWeeks = Math.floor(diffDays / 7);
+        
+        return (diffWeeks % 2 === 0) ? "大周" : "小周";
+    }
+
+    // 判断某一天最终是否需要上班，包含多天连休的判断
+    function determineWorkStatus(date, weekType) {
+        let dayOfWeek = date.getDay(); 
+        let dateStr = getDateFormatStr(date);
+        let holidayInfo = getHolidayInfo(dateStr);
+
+        if (holidayInfo && holidayInfo.type === 'holiday') {
+            return { status: "休息 ☕", desc: holidayInfo.name + "假期" };
+        }
+        
+        if (holidayInfo && holidayInfo.type === 'workday') {
+            return { status: "上班 💼", desc: holidayInfo.name + "上班" };
+        }
+
+        if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+            return { status: "上班 💼", desc: "正常工作日" };
+        } else if (dayOfWeek === 0) {
+            return { status: "休息 ☕", desc: "星期日双休" };
+        } else if (dayOfWeek === 6) {
+            if (weekType === "大周") {
+                return { status: "休息 ☕", desc: "大周双休" };
+            } else {
+                return { status: "上班 💼", desc: "小周单休" };
+            }
+        }
+    }
+
+    function formatDateDisplay(date) {
+        let y = date.getFullYear();
+        let m = date.getMonth() + 1;
+        let d = date.getDate();
+        return y + "年" + m + "月" + d + "日";
+    }
+
+    function init() {
+        let today = new Date();
+        let todayStr = getDateFormatStr(today);
+        let weekType = getWeekType(today);
+        let holidayInfo = getHolidayInfo(todayStr);
+
+        document.getElementById("today-date").innerText = formatDateDisplay(today);
+        document.getElementById("today-status").innerText = "本周是" + weekType;
+
+        let todayExtraHTML = "";
+        if (holidayInfo) {
+            if (holidayInfo.type === 'holiday') {
+                todayExtraHTML = `<span class="holiday-badge">${holidayInfo.name}连休中</span>`;
+            } else {
+                todayExtraHTML = `<span class="work-badge">${holidayInfo.name}必须上班</span>`;
+            }
+        }
+        document.getElementById("today-holiday-status").innerHTML = todayExtraHTML;
+        
+        let scheduleList = document.getElementById("future-schedule");
+        for (let i = 0; i < 4; i++) {
+            let futureDate = new Date(today);
+            let dayOfWeek = futureDate.getDay();
+            let daysUntilSaturday = 6 - dayOfWeek;
+            if (daysUntilSaturday < 0) daysUntilSaturday = 6;
+            
+            futureDate.setDate(today.getDate() + daysUntilSaturday + (i * 7));
+            let futureWeekType = getWeekType(futureDate);
+            let workStatus = determineWorkStatus(futureDate, futureWeekType);
+            
+            let li = document.createElement("li");
+            let displayText = formatDateDisplay(futureDate) + " (周六)：" + workStatus.status + " [" + workStatus.desc + "]";
+            
+            let dateStr = getDateFormatStr(futureDate);
+            let futureHolidayInfo = getHolidayInfo(dateStr);
+            if (futureHolidayInfo) {
+                let badgeClass = futureHolidayInfo.type === 'holiday' ? 'holiday-badge' : 'work-badge';
+                displayText += ` <span class="${badgeClass}">${futureHolidayInfo.name}</span>`;
+            }
+
+            li.innerHTML = displayText;
+            scheduleList.appendChild(li);
+        }
+    }
+
+    function checkDate() {
+        let inputVal = document.getElementById("query-date").value;
+        if (!inputVal) {
+            document.getElementById("query-result").innerText = "请先选择一个日期";
+            return;
+        }
+        let queryDate = new Date(inputVal);
+        let weekType = getWeekType(queryDate);
+        let workStatus = determineWorkStatus(queryDate, weekType);
+        
+        document.getElementById("query-result").innerHTML = 
+            `该周是：${weekType}。<br>当日安排：${workStatus.status} (${workStatus.desc})`;
+    }
+
+    window.onload = init;
+</script>
+
+</body>
+</html>
